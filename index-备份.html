@@ -48,10 +48,10 @@
             height: 150px;
         }
 
-        /*.highlight {*/
-        /*    fill: red !important;*/
-
-        /*}*/
+        .highlight {
+            fill: red !important;
+        ;
+        }
     </style>
 </head>
 <body>
@@ -195,23 +195,16 @@
     }
     
     function highlightFeature(idxL) {
-        const colorScale = d3.scaleLinear()
-            .domain([0, 1])  // 数据范围 [0, 100]
-            .range(["#ffcccc", "#990000"]);  // 浅红色到深红色
         featureNames.forEach(featureName => {
             let cur_bin_idx = [];
             let cur_bin_map = featureDataMap[featureName];
             for(let idx of idxL) {
                 cur_bin_idx.push(featureDataMap[featureName][idx]);
             }
-            const countObject = cur_bin_idx.reduce((acc, item) => {
-                // 如果 acc 中没有 item，则初始化为 0，然后加 1
-                acc[item] = (acc[item] || 0) + 1;
-                return acc;
-            }, {});
+            cur_bin_idx = [...new Set(cur_bin_idx)]
             d3.selectAll(`#${featureName}_svg .feature-bar`)
-                .style("fill", function(d, i) {
-                    return Object.keys(countObject).includes(i) ? colorScale(countObject[i] / d.length) : 'steelblue';
+                .classed("highlight", function(d, i) {
+                    return cur_bin_idx.includes(i);
                 });
         })
 
@@ -220,7 +213,7 @@
     function resetFeatureHighlight() {
         featureNames.forEach(featureName => {
             d3.selectAll(`#${featureName}_svg .feature-bar`)
-                .style("fill", "steelblue");
+                .classed("highlight", false);
         })
     }
 
