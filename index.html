@@ -323,7 +323,7 @@
         });
     }
 
-    d3.json('DELPHI_data_1.json').then(data => {
+    d3.json('DELPHI_data/DELPHI_data_1.json').then(data => {
         const defaultMetric = populateOptions(data);
         const metricData = data[defaultMetric];
         populateBudgetOptions(metricData);
@@ -343,7 +343,7 @@
             updateChart(selectedMetric, data, selectedBudget);
         });
 
-        d3.csv('../features_data/generated_lists_1_features.csv').then(ret => {
+        d3.csv('features_data/generated_lists_1_features.csv').then(ret => {
             console.log(ret);
             const featureData = ret;
             plotFeatureDistributions(featureData);
