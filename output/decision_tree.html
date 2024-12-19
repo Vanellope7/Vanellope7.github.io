@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tree Diagram with D3.js (Custom Data Structure)</title>
+    <script src="https://d3js.org/d3.v6.min.js"></script>
+    <style>
+        .node {
+            cursor: pointer;
+            fill: lightsteelblue;
+            stroke: steelblue;
+            stroke-width: 1.5px;
+        }
+
+        .node:hover {
+            fill: steelblue;
+        }
+
+        .label {
+            font-size: 12px;
+            font-weight: bold;
+            fill: #fff;
+        }
+
+        .link {
+            fill: none;
+            stroke: #ccc;
+            stroke-width: 2px;
+        }
+
+        /* Tooltip样式 */
+        .tooltip {
+            position: absolute;
+            background-color: white;
+            border: 1px solid #ccc;
+            padding: 10px;
+            border-radius: 5px;
+            /*display: none;*/
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <svg width="1000" height="1200"></svg>
+    <div id="tooltip" class="tooltip"></div>  <!-- 添加tooltip -->
+    <script>
+
+
+        // 转换数据格式为 D3 可用的层次结构格式
+        function convertToD3Format(data) {
+            return {
+                name: (data.left || data.right) ? `${data.feature} < ${data.split}` : data.best_algorithm,
+                children: (data.left || data.right) ? [
+                    ...(data.left ? [convertToD3Format(data.left)] : []),
+                    ...(data.right ? [convertToD3Format(data.right)] : [])
+                ] : [],
+                FoBA: data.FoBA ? data.FoBA : '',
+                feature: data.feature ? data.feature : '',
+                split: data.split ? data.split : '',
+                num: data.num ? data.num : '',
+                best_algorithm: data.best_algorithm
+
+            };
+        }
+        d3.json('decision_tree_1_Max_C.json').then(rawData => {
+            const treeData = convertToD3Format(rawData);
+            console.log(treeData)
+
+            // 设置SVG画布的宽高
+            const margin = { top: 20, right: 120, bottom: 20, left: 120 },
+                  width = 1500 - margin.right - margin.left,
+                  height = 1400 - margin.top - margin.bottom;
+
+            const svg = d3.select("svg")
+                          .attr("width", width + margin.right + margin.left)
+                          .attr("height", height + margin.top + margin.bottom)
+                        .append("g")
+                          .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+            const treemap = d3.tree().size([height, width]);
+
+            const root = d3.hierarchy(treeData);
+            treemap(root);
+
+            // 绘制连接线，使用垂直布局
+            svg.selectAll(".link")
+                .data(root.links())
+                .enter().append("path")
+                .attr("class", "link")
+                .attr("d", d3.linkVertical().x(d => d.x).y(d => d.y));
+
+            // 绘制节点
+            const nodes = svg.selectAll(".node")
+                             .data(root.descendants())
+                             .enter().append("g")
+                             .attr("class", "node")
+                             .attr("transform", d => "translate(" + d.x + "," + d.y + ")");
+
+            // 绘制节点矩形，并动态调整宽度
+            nodes.append("rect")
+                 .attr("x", d => -d.data.name.length * 3)  // 根据文字长度调整位置
+                 .attr("y", -10)
+                 .attr("width", d => d.data.name.length * 6) // 根据文字长度调整宽度
+                 .attr("height", 30)
+                 .attr("class", "node");
+
+            // 添加文本标签，文本居中
+            nodes.append("text")
+                 .attr("dy", ".35em")
+                 .attr("x", d => 0)  // 文本水平居中
+                 .style("text-anchor", "middle")
+                 .text(d => d.data.name)
+
+
+         // Tooltip元素
+        const tooltip = d3.select("#tooltip");
+
+        // 鼠标悬停时显示更多信息
+        nodes.on("mouseover", function(event, d) {
+            tooltip.transition().duration(200).style("opacity", 1);
+            console.log(d)
+            tooltip.html(`
+                <strong>Algorithm:</strong> ${d.data['best_algorithm']}<br>
+                <strong>FoBA:</strong> ${d.data.FoBA}<br>
+                <strong>Feature:</strong> ${d.data.feature}<br>
+                <strong>Split:</strong> ${d.data.split}<br>
+                <strong>Num:</strong> ${d.data.num}
+            `)
+            .style("left", (event.pageX + 10) + "px")
+            .style("top", (event.pageY - 28) + "px");
+        })
+        .on("mouseout", function() {
+            tooltip.transition().duration(200).style("opacity", 0);
+        });
+        })
+
+
+
+    </script>
+</body>
+</html>

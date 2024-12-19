@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>柱状图与特征分布 - 差分隐私算法评估</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        .bar {
+            fill: steelblue;
+        }
+
+        .bar:hover {
+            fill: orange;
+        }
+
+        .axis-label {
+            font-size: 12px;
+        }
+
+        .title {
+            font-size: 16px;
+            font-weight: bold;
+            text-anchor: middle;
+        }
+
+        .control {
+            margin-bottom: 10px;
+        }
+
+        .feature-chart {
+            font-size: 12px;
+        }
+
+        .feature-title {
+            font-size: 14px;
+            font-weight: bold;
+            text-anchor: middle;
+        }
+        #featureCharts {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr); /* 两列布局 */
+            gap: 10px;
+        }
+
+        .feature-container {
+            width: 100%;
+            height: 150px;
+        }
+
+        .highlight {
+            fill: red !important;
+        ;
+        }
+    </style>
+</head>
+<body>
+<div class="control">
+    <label for="metricSelect">选择评估指标:</label>
+    <select id="metricSelect"></select>
+    <label for="budgetSelect">选择隐私预算:</label>
+    <select id="budgetSelect">
+        <option value="all">全部隐私预算</option>
+    </select>
+    <button id="animateButton">动画播放</button>
+</div>
+<div style="display: flex;">
+    <svg id="mainChart" width="800" height="500"></svg>
+    <div id="featureCharts"></div>
+</div>
+<script>
+    const svgWidth = 800;
+    const svgHeight = 500;
+    const margin = { top: 50, right: 30, bottom: 50, left: 70 };
+    const width = svgWidth - margin.left - margin.right;
+    const height = svgHeight - margin.top - margin.bottom;
+
+    const svg = d3.select("#mainChart")
+        .append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const x = d3.scaleBand().range([0, width]).padding(0.1);
+    const y = d3.scaleLinear().range([height, 0]);
+
+    const xAxis = svg.append("g").attr("transform", `translate(0,${height})`);
+    const yAxis = svg.append("g");
+
+    const title = svg.append("text")
+        .attr("x", width / 2)
+        .attr("y", -10)
+        .attr("class", "title")
+        .text("");
+
+    const currentBudgetText = svg.append("text")
+        .attr("x", width / 2)
+        .attr("y", height + margin.bottom - 10)
+        .attr("class", "current-budget")
+        .text("");
+
+    const yLabel = svg.append("text")
+        .attr("x", -height / 2)
+        .attr("y", -margin.left + 10)
+        .attr("text-anchor", "middle")
+        .attr("transform", "rotate(-90)")
+        .attr("class", "axis-label")
+        .text("最优算法出现次数");
+
+    let featureDataMap = {};
+    let featureNames = [];
+
+
+    function populateOptions(data) {
+        const metricSelect = d3.select("#metricSelect");
+        metricSelect.selectAll("option").remove();
+
+        const metrics = Object.keys(data);
+        metrics.forEach(metric => {
+            metricSelect.append("option")
+                .attr("value", metric)
+                .text(metric);
+        });
+
+        return metrics[0]; // 返回第一个指标作为默认值
+    }
+
+    function populateBudgetOptions(metricData) {
+        const budgetSelect = d3.select("#budgetSelect");
+        budgetSelect.selectAll("option:not([value='all'])").remove();
+
+        const budgets = Object.keys(metricData);
+        budgets.forEach(budget => {
+            budgetSelect.append("option")
+                .attr("value", budget)
+                .text(budget);
+        });
+    }
+
+    function updateChart(metric, data, selectedBudget) {
+        const metricData = data[metric];
+
+        // 确保横轴始终包括所有算法的keys，且顺序一致
+        const allAlgorithms = new Set();
+        for (const budget in metricData) {
+            Object.keys(metricData[budget]).forEach(algorithm => allAlgorithms.add(algorithm));
+        }
+        const allAlgorithmsArray = Array.from(allAlgorithms);
+
+        const optimalCounts = {};
+        const optimalCountsIdx = {};
+        allAlgorithmsArray.forEach(algorithm => optimalCounts[algorithm] = 0); // 初始化所有算法计数为0
+
+        if (selectedBudget === "all") {
+            for (const budget in metricData) {
+                countOptimal(metricData[budget], optimalCounts, optimalCountsIdx);
+            }
+        } else {
+            countOptimal(metricData[selectedBudget], optimalCounts, optimalCountsIdx);
+        }
+
+        const chartData = allAlgorithmsArray.map(algorithm => ({
+            algorithm,
+            count: optimalCounts[algorithm],
+            idxL: optimalCountsIdx[algorithm]
+        }));
+
+        x.domain(allAlgorithmsArray);
+        y.domain([0, d3.max(chartData, d => d.count)]).nice();
+
+        xAxis.call(d3.axisBottom(x)).selectAll("text").style("text-anchor", "middle");
+        yAxis.call(d3.axisLeft(y));
+
+        const bars = svg.selectAll(".bar").data(chartData);
+
+        bars.enter()
+            .append("rect")
+            .attr("class", "bar")
+            .merge(bars)
+            .transition()
+            .duration(500)
+            .attr("x", d => x(d.algorithm))
+            .attr("y", d => y(d.count))
+            .attr("width", x.bandwidth())
+            .attr("height", d => height - y(d.count))
+
+        bars.exit().remove();
+        // 添加 hover 交互
+        const commendBars = svg.selectAll(".bar")
+        commendBars.on("mouseover", function(event, d) {
+            highlightFeature(d.idxL);
+        }).on("mouseout", function() {
+            resetFeatureHighlight();
+        });
+
+        title.text(`差分隐私算法评估结果 (${metric})`);
+    }
+    
+    function highlightFeature(idxL) {
+        featureNames.forEach(featureName => {
+            let cur_bin_idx = [];
+            let cur_bin_map = featureDataMap[featureName];
+            for(let idx of idxL) {
+                cur_bin_idx.push(featureDataMap[featureName][idx]);
+            }
+            cur_bin_idx = [...new Set(cur_bin_idx)]
+            d3.selectAll(`#${featureName}_svg .feature-bar`)
+                .classed("highlight", function(d, i) {
+                    return cur_bin_idx.includes(i);
+                });
+        })
+
+    }
+
+    function resetFeatureHighlight() {
+        featureNames.forEach(featureName => {
+            d3.selectAll(`#${featureName}_svg .feature-bar`)
+                .classed("highlight", false);
+        })
+    }
+
+    function countOptimal(algorithms, optimalCounts, optimalCountsIdx) {
+        const numValues = Math.max(...Object.values(algorithms).map(values => values.length));
+
+        for (let idx = 0; idx < numValues; idx++) {
+            let optimalAlgorithm = "";
+            let optimalValue = Infinity;
+
+            for (const algorithm in algorithms) {
+                const values = algorithms[algorithm];
+                const value = values[idx] !== undefined ? values[idx] : Infinity;
+
+                if (value < optimalValue) {
+                    optimalValue = value;
+                    optimalAlgorithm = algorithm;
+                }
+            }
+
+            if (optimalAlgorithm) {
+                optimalCounts[optimalAlgorithm] += 1;
+                if(optimalCountsIdx[optimalAlgorithm]) {
+                    optimalCountsIdx[optimalAlgorithm].push(idx);
+                }
+                else {
+                    optimalCountsIdx[optimalAlgorithm] = [];
+                }
+            }
+        }
+    }
+
+    function plotFeatureDistributions(features) {
+        featureNames = Object.keys(features[0]); // Get feature names from CSV keys
+
+        const container = d3.select("#featureCharts");
+        container.selectAll("div").remove();
+
+        featureNames.forEach(featureName => {
+            const featureData = features.map(row => parseFloat(row[featureName]));
+
+            const featureContainer = container.append("div")
+                .attr("class", "feature-container");
+
+            const featureSvg = featureContainer.append("svg")
+                .attr("width", "100%")
+                .attr("height", "100%")
+                .append("g")
+                .attr('id', `${featureName}_svg`)
+                .attr("transform", "translate(30,20)");
+
+            const featureX = d3.scaleLinear()
+                .domain([d3.min(featureData), d3.max(featureData)])
+                .range([0, 250]);
+
+            const featureY = d3.scaleLinear()
+                .domain([0, d3.max(featureData, d => d)])
+                .range([90, 0]);
+
+            featureSvg.append("g")
+                .attr("transform", "translate(0,90)")
+                .call(d3.axisBottom(featureX).ticks(5));
+
+            featureSvg.append("text")
+                .attr("x", 130)
+                .attr("y", -5)
+                .attr("class", "feature-title")
+                .text(featureName);
+
+            const histogram = d3.histogram()
+                .domain(featureX.domain())
+                .thresholds(featureX.ticks(20));
+
+            const bins = histogram(featureData);
+
+            // 带有索引的数组
+            const indexedData = featureData.map((value, index) => ({ value, index }));
+
+            // 创建映射对象
+            const indexToBinMap = {};
+
+            bins.forEach((bin, binIndex) => {
+                bin.forEach(value => {
+                    // 找到所有匹配该值的索引
+                    indexedData.forEach(item => {
+                        if (item.value === value) {
+                            indexToBinMap[item.index] = binIndex;
+                        }
+                    });
+                });
+            });
+            featureDataMap[featureName] = indexToBinMap;
+
+
+            featureY.domain([0, d3.max(bins, d => d.length)]);
+
+            featureSvg.selectAll("rect")
+                .data(bins)
+                .enter()
+                .append("rect")
+                .attr('class', 'feature-bar')
+                .attr("x", d => featureX(d.x0))
+                .attr("y", d => featureY(d.length))
+                .attr("width", d => featureX(d.x1) - featureX(d.x0) - 1)
+                .attr("height", d => 90 - featureY(d.length))
+                .style("fill", "steelblue");
+        });
+    }
+
+    d3.json('DELPHI_data_1.json').then(data => {
+        const defaultMetric = populateOptions(data);
+        const metricData = data[defaultMetric];
+        populateBudgetOptions(metricData);
+
+        updateChart(defaultMetric, data, "all");
+
+        d3.select("#metricSelect").on("change", function() {
+            const selectedMetric = d3.select(this).property("value");
+            const metricData = data[selectedMetric];
+            populateBudgetOptions(metricData);
+            updateChart(selectedMetric, data, d3.select("#budgetSelect").property("value"));
+        });
+
+        d3.select("#budgetSelect").on("change", function() {
+            const selectedBudget = d3.select(this).property("value");
+            const selectedMetric = d3.select("#metricSelect").property("value");
+            updateChart(selectedMetric, data, selectedBudget);
+        });
+
+        d3.csv('../features_data/generated_lists_1_features.csv').then(ret => {
+            console.log(ret);
+            const featureData = ret;
+            plotFeatureDistributions(featureData);
+        });
+    });
+</script>
+</body>
+</html>
